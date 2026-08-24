@@ -1,8 +1,11 @@
 # Phase status
 
 Tracking against `JawTrackSpec.md` §9's phase table. The spec's own rule (§12): *"Do not
-start Phase 3 before Phase 1 has survived multiple real nights on the target device."* This
-build honors that — Phase 2+ has not been started.
+start Phase 3 before Phase 1 has survived multiple real nights on the target device."* Phases
+0–2 were built in that order, honoring the rule. Phase 3 was then explicitly requested before
+Phase 1/2's real-hardware checklists were run — that's a deliberate choice to keep building
+ahead of validation, not an accident. The "not done: the acceptance criterion" callouts below
+are how that tradeoff stays visible rather than silently skipped.
 
 ## Phase 0 — decisions and verifications
 
@@ -70,13 +73,75 @@ is unit-tested on synthetic tones, not on a real room's HVAC/traffic signature.
 - [ ] Confirm calibration mode never writes raw audio to disk — only the finalized profile.
 - [ ] Re-run calibration in a different room and confirm the profile changes accordingly.
 
-## Phase 3+ — not started
+## Phase 3 — Gates 1–2 + heuristic Gate 3 + episode assembly
 
-Detection gates, episode assembly, clip encryption, Health Connect sync, report UI, labeling
-loop, correlation engine, PDF export, trained classifier — all pending Phase 1 (and now Phase
-2) clearing their checklists above on the actual target phone. Gate 1's `noiseFloor + 8dB`
-energy threshold (§4.7) and Gate 3's spectral-flatness/centroid heuristics (§4.7) are the first
-things that will consume the `RoomProfile` this phase produces.
+Split cleanly by how verifiable each half is.
+
+**Fully unit-tested, verified directly in this sandbox (pure Kotlin, no Android/ML dependency):**
+
+- `core-logic/.../dsp`: `SpectralFeatures` (flatness, centroid) and `PeriodicityDetector`
+  (autocorrelation-based ~3–6s snore-rhythm detection — §4.9's "build that test explicitly and
+  unit-test it", done: `PeriodicityDetectorTest`).
+- `core-logic/.../detection`:
+  - `EnergyGate` — Gate 1's sustained-`noiseFloor+8dB` debounce, plus `forRoomProfile()` which
+    is the thing that actually *consumes* Phase 2's `RoomProfile` output (via the new
+    `RoomProfileMath.broadbandFloorDb`, since Gate 1 needs one scalar and calibration produces
+    a per-band map).
+  - `Gate2RejectionPolicy` — pure decision logic over `(label, score)` pairs (Speech →
+    `MUST_DESTROY`, the other seven §4.7 reject classes → `REJECT`), tested without needing an
+    actual classifier.
+  - `GrindingHeuristicScorer` — Gate 3's v1 heuristic stand-in (§4.7: flatness in 1–6kHz,
+    centroid in 1.5–4kHz, absence of snore-like periodicity, sustained-duration check),
+    combining the above into a 0–1 score shaped like the eventual trained head's output.
+  - `EpisodeAssembler` — hysteresis (enter >0.7/exit <0.4), <3s merge, <300ms/>30s duration
+    filter, peak/mean/dominant-band aggregation (§4.8). The most heavily tested file in the
+    repo — streaming mid-emission and merge-chain behavior included.
+
+**Written but unverified (needs Android SDK, a real YAMNet `.tflite` asset, and a device):**
+
+- `ml/Gate2Classifier` (interface) + `ml/YamnetGate2Classifier` (MediaPipe `AudioClassifier`
+  implementation). See the large warning comment at the top of that file — the API surface is
+  a best reconstruction, not compiled-and-checked, and **no model asset is bundled**
+  (`app/src/main/assets/yamnet.tflite` doesn't exist in this repo). It also uses AUDIO_CLIPS
+  mode rather than the spec's STREAM mode, because `FrameWindower` polls the ring buffer for
+  discrete windows rather than pushing a continuous stream — documented in the same comment.
+- `detection/FrameWindower` — polls the ring buffer (same pattern as Phase 2's
+  `CalibrationSampler`) to run Gate 1 every ~200ms and Gates 2/3 once Gate 1 sustains, feeding
+  `EpisodeAssembler` and persisting completed episodes via `SessionRepository.saveEpisode`.
+- `RecordingService` now builds a `Gate2Classifier` at session start and **catches any failure**
+  (missing asset, bad API call, anything) — a broken Gate 2 degrades to "Gate 1 + heuristic
+  Gate 3 only" rather than taking the whole night's recording down. This is untested because
+  there's no way to make Gate 2 actually fail or succeed without a real model in this sandbox.
+- Episode persistence added a field the original §7 schema table omitted:
+  `Episode.rejectedClasses`, which §4.8's prose explicitly calls for recording. Safe to add —
+  no released schema/migration exists yet.
+
+**Not done, and can't be done without real audio:** §9's acceptance criterion (*">80% recall on
+a synthetic set of injected grinding clips"*) and §10's whole validation plan (gold nights,
+synthetic injection at varying SNR, the snoring/TV/sleep-talking negative test suite). All of
+that needs actual recorded audio — grinding samples, room noise, snoring — which doesn't exist
+in this repo and can't be fetched in this sandbox.
+
+### Before calling Phase 3 done, on the real device
+
+- [ ] Bundle a real YAMNet `.tflite` and verify `YamnetGate2Classifier` against the actual
+      `com.google.mediapipe:tasks-audio` API (method names, builder pattern, result shape) —
+      fix whatever doesn't match; it was written from memory, not compiled.
+- [ ] Confirm the MediaPipe dependency version in `app/build.gradle.kts` resolves — pin
+      whatever's actually current on Google's Maven repo.
+- [ ] Run §10's synthetic injection tests and negative test suite (snoring night, TV night,
+      sleep-talking night) and check recall/false-positives-per-hour — this is the actual gate
+      for whether Phase 3 is usable, not just "does it compile."
+- [ ] Sanity-check `GrindingHeuristicScorer`'s four thresholds against real clips; they're
+      currently the literal numbers from §4.7 with no empirical tuning.
+- [ ] Confirm a Speech-flagged window really never reaches disk (§6.4) — this needs a real
+      device test, not just the `MUST_DESTROY` unit-level logic check.
+
+## Phase 4+ — not started
+
+ClipStore + Keystore encryption, Health Connect sync, report UI, labeling loop, correlation
+engine, PDF export, trained classifier swap — all pending the Phase 3 checklist above on real
+hardware with real audio.
 
 The full Room schema for these phases (§7) is already in place (`app/.../data/db/entities`)
 so adding them later won't require a destructive migration, but their DAOs are unused CRUD

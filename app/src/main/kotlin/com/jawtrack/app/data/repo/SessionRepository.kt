@@ -1,6 +1,7 @@
 package com.jawtrack.app.data.repo
 
 import com.jawtrack.app.data.db.JawTrackDatabase
+import com.jawtrack.app.data.db.entities.Episode
 import com.jawtrack.app.data.db.entities.Gap
 import com.jawtrack.app.data.db.entities.RoomProfile
 import com.jawtrack.app.data.db.entities.Session
@@ -8,6 +9,7 @@ import com.jawtrack.app.data.db.entities.SessionState
 import com.jawtrack.corelogic.audio.CoverageCalculator
 import com.jawtrack.corelogic.audio.GapInterval
 import com.jawtrack.corelogic.calibration.RoomProfileJson
+import com.jawtrack.corelogic.detection.EpisodeCandidate
 import kotlinx.coroutines.flow.Flow
 
 class SessionRepository(private val db: JawTrackDatabase) {
@@ -46,6 +48,23 @@ class SessionRepository(private val db: JawTrackDatabase) {
         )
         db.sessionDao().updateRoomProfile(sessionId, profileId)
         return profileId
+    }
+
+    /** Persists one assembled episode (§4.8) against the running session. */
+    suspend fun saveEpisode(sessionId: Long, candidate: EpisodeCandidate, classifierVersion: String): Long {
+        val episode = Episode(
+            sessionId = sessionId,
+            onsetAt = candidate.onsetMillis,
+            offsetAt = candidate.offsetMillis,
+            durationMs = candidate.offsetMillis - candidate.onsetMillis,
+            peakScore = candidate.peakScore.toFloat(),
+            meanScore = candidate.meanScore.toFloat(),
+            peakDb = candidate.peakDb.toFloat(),
+            dominantBandHz = candidate.dominantBandHz?.toFloat(),
+            classifierVersion = classifierVersion,
+            rejectedClasses = candidate.rejectedClasses
+        )
+        return db.episodeDao().insert(episode)
     }
 
     /**

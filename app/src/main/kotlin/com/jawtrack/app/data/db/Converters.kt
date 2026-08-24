@@ -17,4 +17,10 @@ class Converters {
 
     @TypeConverter
     fun userLabelFromString(value: String?): UserLabel? = value?.let { UserLabel.valueOf(it) }
+
+    @TypeConverter
+    fun stringListToDb(labels: List<String>): String = labels.joinToString(separator = "|")
+
+    @TypeConverter
+    fun stringListFromDb(value: String): List<String> = if (value.isEmpty()) emptyList() else value.split("|")
 }

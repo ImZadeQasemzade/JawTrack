@@ -14,8 +14,14 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.jawtrack.app.JawTrackApp
 import com.jawtrack.app.data.db.entities.SessionState
+import com.jawtrack.app.detection.FrameWindower
+import com.jawtrack.app.ml.Gate2Classifier
+import com.jawtrack.app.ml.YamnetGate2Classifier
 import com.jawtrack.app.notification.RecordingNotificationManager
 import com.jawtrack.corelogic.audio.AudioRingBuffer
+import com.jawtrack.corelogic.calibration.RoomProfileJson
+import com.jawtrack.corelogic.detection.EnergyGate
+import com.jawtrack.corelogic.detection.EpisodeCandidate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,6 +45,8 @@ class RecordingService : Service(), AudioCapture.Listener {
     private lateinit var ringBuffer: AudioRingBuffer
     private lateinit var audioCapture: AudioCapture
     private var calibrationSampler: CalibrationSampler? = null
+    private var frameWindower: FrameWindower? = null
+    private var gate2Classifier: Gate2Classifier? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     private var sessionId: Long = -1
@@ -121,10 +129,49 @@ class RecordingService : Service(), AudioCapture.Listener {
             audioCapture.start()
             if (calibrationOnly) {
                 calibrationSampler = CalibrationSampler(ringBuffer).also { it.start(serviceScope) }
+            } else {
+                startDetectionPipeline()
             }
             runHeartbeatLoop()
         }
         runNotificationTicker()
+    }
+
+    /** Wires Gates 1–3 + episode assembly (§4.7, §4.8) for a normal (non-calibration) night. */
+    private suspend fun startDetectionPipeline() {
+        val roomProfile = app.sessionRepository.getMostRecentRoomProfile()
+        val energyGate = if (roomProfile != null) {
+            EnergyGate.forRoomProfile(RoomProfileJson.decode(roomProfile.bandNoiseFloorJson))
+        } else {
+            // Shouldn't normally happen -- the UI forces a calibration night first (§4.5) -- but
+            // a stale/missing profile must degrade to a conservative default, not crash the night.
+            Log.w(TAG, "No RoomProfile available; using a conservative fallback Gate 1 threshold")
+            EnergyGate(thresholdDb = FALLBACK_ENERGY_THRESHOLD_DB)
+        }
+
+        gate2Classifier = try {
+            YamnetGate2Classifier(applicationContext)
+        } catch (e: Exception) {
+            Log.w(TAG, "Gate 2 (YAMNet) unavailable -- continuing with Gate 1 + heuristic Gate 3 only", e)
+            null
+        }
+
+        frameWindower = FrameWindower(
+            ringBuffer = ringBuffer,
+            energyGate = energyGate,
+            gate2Classifier = gate2Classifier,
+            onEpisode = ::onEpisodeAssembled
+        ).also { it.start(serviceScope) }
+    }
+
+    private fun onEpisodeAssembled(candidate: EpisodeCandidate) {
+        episodeCount++
+        val currentSessionId = sessionId
+        if (currentSessionId >= 0) {
+            serviceScope.launch {
+                app.sessionRepository.saveEpisode(currentSessionId, candidate, CLASSIFIER_VERSION)
+            }
+        }
     }
 
     private fun runHeartbeatLoop() {
@@ -165,6 +212,10 @@ class RecordingService : Service(), AudioCapture.Listener {
     private fun stopSelfCleanly() {
         serviceScope.launch {
             audioCapture.stop()
+            frameWindower?.stop() // flushes any in-progress/pending episode (§4.8)
+            frameWindower = null
+            gate2Classifier?.close()
+            gate2Classifier = null
             if (sessionId >= 0) {
                 calibrationSampler?.let { sampler ->
                     sampler.stop()
@@ -213,6 +264,8 @@ class RecordingService : Service(), AudioCapture.Listener {
         // a session ended cleanly.
         serviceJob.cancel()
         releaseWakeLock()
+        gate2Classifier?.close()
+        gate2Classifier = null
         try {
             unregisterReceiver(batteryReceiver)
         } catch (_: IllegalArgumentException) {
@@ -257,6 +310,13 @@ class RecordingService : Service(), AudioCapture.Listener {
         private const val NOTIFICATION_TICK_MILLIS = 30_000L
         private const val LOW_BATTERY_STOP_THRESHOLD_PCT = 30
         private const val MAX_SESSION_DURATION_MILLIS = 12 * 60 * 60 * 1000L // 12h wakelock ceiling
+
+        // -55dB is a conservative (over-sensitive) guess for a quiet bedroom, used only if a
+        // session somehow starts with no RoomProfile yet -- the UI is supposed to prevent that.
+        private const val FALLBACK_ENERGY_THRESHOLD_DB = -55.0
+
+        /** Logged on every episode so old data stays interpretable after model/threshold changes (§12). */
+        const val CLASSIFIER_VERSION = "gate3-heuristic-v1"
 
         private val _isRunning = MutableStateFlow(false)
 

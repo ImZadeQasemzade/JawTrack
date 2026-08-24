@@ -35,5 +35,7 @@ data class Episode(
     val sleepStage: String? = null,
     /** Night/cluster-level HR context (§5.1) — not per-episode beat data. Null until enriched. */
     val hrContextJson: String? = null,
-    val userLabel: UserLabel? = null
+    val userLabel: UserLabel? = null,
+    /** Gate 2 classes seen during this window (§4.8) — diagnostic, e.g. for false-positive review. */
+    val rejectedClasses: List<String> = emptyList()
 )

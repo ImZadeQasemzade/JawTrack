@@ -5,13 +5,14 @@ heart-rate/sleep data via Health Connect. Wellness self-tracking only — not a 
 no diagnosis or treatment claims. See `docs/JawTrackSpec.md` for the full technical spec this
 build follows (phases, algorithms, data model, acceptance criteria).
 
-## Status: Phase 0–2 built, not yet device-verified
+## Status: Phase 0–3 built, not yet device-verified
 
 The spec is explicit that later phases must not start before Phase 1 has survived multiple
 real nights on the target phone (§9, §12): *"Phase 1 is the real risk phase... Everything
-downstream is worthless if the recording stops at 2 a.m."* This build stops at that gate on
-purpose. See `docs/PHASE_STATUS.md` for exactly what's done, what's stubbed, and what needs a
-real device before Phase 2+ can start.
+downstream is worthless if the recording stops at 2 a.m."* Phases 0–2 honored that gate before
+moving on; Phase 3 was then built ahead of Phase 1/2's real-hardware checklists at explicit
+request. See `docs/PHASE_STATUS.md` for exactly what's done, what's unverified, and what still
+needs a real device.
 
 **What works today:**
 - Foreground recording service (`RecordingService`) using `AudioRecord` with `UNPROCESSED` ->
@@ -31,11 +32,17 @@ real device before Phase 2+ can start.
   room's per-band noise floor across the night via reservoir sampling, without ever persisting
   raw audio. The first-ever session is forced into calibration mode; a "Recalibrate room"
   option is available afterward.
+- The three-gate detection cascade + episode assembly (§4.7, §4.8): Gate 1 (energy, consumes
+  the calibration `RoomProfile`), Gate 2's rejection policy, Gate 3's DSP heuristic (spectral
+  flatness/centroid + snore-periodicity rejection), and `EpisodeAssembler`'s hysteresis/merge/
+  duration-filter logic are all pure Kotlin in `:core-logic` and fully unit-tested. The Android
+  wiring (`FrameWindower`, and a MediaPipe/YAMNet-backed `Gate2Classifier`) is written but
+  **unverified** — no model asset is bundled, and the MediaPipe API surface hasn't been
+  compiled against the real library. `RecordingService` catches a broken Gate 2 and degrades to
+  Gate 1 + heuristic Gate 3 only rather than losing the night's recording over it.
 
-**What's intentionally not built yet:** the audio-classifier gates and episode assembly, clip
-encryption, Health Connect sync, report screens, correlation engine, PDF export, the trained
-classifier head. These are Phases 3–9 and depend on Phase 1 (and now Phase 2) having proven
-themselves overnight first.
+**What's intentionally not built yet:** clip encryption, Health Connect sync, report screens,
+correlation engine, PDF export, the trained classifier head. These are Phases 4–9.
 
 ## Repo layout
 
@@ -63,7 +70,7 @@ sandbox environment.
 CI (`.github/workflows/ci.yml`) runs `core-logic` tests on every push (no SDK required) and a
 full `app` lint + unit test + assemble job using `android-actions/setup-android`.
 
-## Before touching Phase 2+
+## Before touching Phase 4+
 
 Do the Phase 0 verification tasks from the spec (§2.1) on the actual target phone + Garmin
 watch — none of this can be done from source code alone:
