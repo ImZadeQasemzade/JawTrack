@@ -30,6 +30,9 @@ class ClipRepository(
         return db.audioClipDao().insert(clip)
     }
 
+    /** Decrypts a clip straight to memory for playback/labeling (§8 Screen 3) — never to a temp file. */
+    fun readClip(path: String): ShortArray = clipStore.readClip(path)
+
     /** Deletes every clip whose retention window has passed. Returns how many were purged. */
     suspend fun purgeExpired(nowMillis: Long): Int {
         val expired = db.audioClipDao().getExpired(nowMillis)

@@ -32,7 +32,8 @@ fun StartNightScreen(
     onStopNight: () -> Unit,
     onDismissSilentDeathBanner: () -> Unit,
     onOpenOnboarding: () -> Unit,
-    onDeleteAllAudio: () -> Unit
+    onDeleteAllAudio: () -> Unit,
+    onViewReport: () -> Unit
 ) {
     var showDeleteConfirmation by remember { mutableStateOf(false) }
 
@@ -60,6 +61,9 @@ fun StartNightScreen(
             )
         } else {
             ReadyCard(state = state, onStartNight = onStartNight, onOpenOnboarding = onOpenOnboarding)
+            TextButton(onClick = onViewReport) {
+                Text("Last night's report")
+            }
             TextButton(onClick = { showDeleteConfirmation = true }) {
                 Text("Delete all audio")
             }

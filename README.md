@@ -5,12 +5,12 @@ heart-rate/sleep data via Health Connect. Wellness self-tracking only — not a 
 no diagnosis or treatment claims. See `docs/JawTrackSpec.md` for the full technical spec this
 build follows (phases, algorithms, data model, acceptance criteria).
 
-## Status: Phase 0–5 built, not yet device-verified
+## Status: Phase 0–6 built, not yet device-verified
 
 The spec is explicit that later phases must not start before Phase 1 has survived multiple
 real nights on the target phone (§9, §12): *"Phase 1 is the real risk phase... Everything
 downstream is worthless if the recording stops at 2 a.m."* Phases 0–2 honored that gate before
-moving on; Phases 3, 4, and 5 were then each built ahead of the prior phase's real-hardware
+moving on; Phases 3 through 6 were then each built ahead of the prior phase's real-hardware
 checklist, at explicit request. See `docs/PHASE_STATUS.md` for exactly what's done, what's
 unverified, and what still needs a real device.
 
@@ -60,8 +60,22 @@ unverified, and what still needs a real device.
   there's no "waiting on sync" banner yet since there's no report screen for it to live on —
   that's Phase 6.
 
-**What's intentionally not built yet:** report screens, the labeling loop, correlation engine,
-PDF export, the trained classifier head. These are Phases 6–9.
+- Report screens + labeling loop (§8): Screen 1 (`LastNightScreen`) shows the JawTrack Index,
+  A/B/C confidence grade, delta vs. the 7-night rolling average, and a plain-language summary
+  sentence — leading with a "stopped early" warning instead of the index when the service didn't
+  shut down cleanly, so an incomplete night never reads as reassuringly low. Screen 2
+  (`TimelineScreen`) is a pinch-to-zoom Canvas sharing one `TimelineLayout`-derived x-axis across
+  sleep-stage bands, HR line, gap hatching, and episode ticks (height = peak score); tapping a
+  tick opens Screen 3. Screen 3 (`EpisodeDetailScreen`) decrypts a clip to memory only (never a
+  temp file), renders its waveform + spectrogram, plays it back, and the three labeling buttons
+  (Grinding/Not grinding/Not sure) each write `Episode.userLabel` + an append-only `Label` row
+  and advance to the next unlabeled episode in the session — a swipe does the same advance
+  without ever silently recording a label. The x-axis math, summary sentence, trend delta,
+  waveform downsampling, and spectrogram generation are pure Kotlin and unit-tested; the Canvas
+  rendering, gestures, and `AudioTrack` playback are Android-only and unverified.
+
+**What's intentionally not built yet:** correlation engine, PDF export, the trained classifier
+head. These are Phases 7–9.
 
 ## Repo layout
 
@@ -89,7 +103,7 @@ sandbox environment.
 CI (`.github/workflows/ci.yml`) runs `core-logic` tests on every push (no SDK required) and a
 full `app` lint + unit test + assemble job using `android-actions/setup-android`.
 
-## Before touching Phase 6+
+## Before touching Phase 7+
 
 Do the Phase 0 verification tasks from the spec (§2.1) on the actual target phone + Garmin
 watch — none of this can be done from source code alone:

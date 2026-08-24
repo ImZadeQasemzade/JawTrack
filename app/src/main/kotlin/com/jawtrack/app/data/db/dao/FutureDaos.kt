@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import com.jawtrack.app.data.db.entities.DailyFactors
-import com.jawtrack.app.data.db.entities.Label
 import com.jawtrack.app.data.db.entities.MorningCheckin
 
 /**
@@ -21,14 +20,8 @@ interface DailyFactorsDao { // Phase 7
 }
 
 @Dao
-interface MorningCheckinDao { // Phase 6
+interface MorningCheckinDao { // Phase 7 (Screen 4)
     @Insert suspend fun upsert(checkin: MorningCheckin)
     @Query("SELECT * FROM morning_checkins WHERE date = :date") suspend fun getForDate(date: String): MorningCheckin?
     @Query("SELECT * FROM morning_checkins ORDER BY date DESC") suspend fun getAll(): List<MorningCheckin>
-}
-
-@Dao
-interface LabelDao { // Phase 6, feeds Phase 9 retraining export
-    @Insert suspend fun insert(label: Label): Long
-    @Query("SELECT * FROM labels ORDER BY labeledAt ASC") suspend fun getAll(): List<Label>
 }

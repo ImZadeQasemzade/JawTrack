@@ -48,6 +48,14 @@ interface SessionDao {
     )
     suspend fun getPendingEnrichment(): List<Session>
 
+    /** Most recent real (non-calibration) ended session, for Screen 1's "last night" (§8). */
+    @Query("SELECT * FROM sessions WHERE endedAt IS NOT NULL AND calibrationOnly = 0 ORDER BY startedAt DESC LIMIT 1")
+    suspend fun getMostRecentEnded(): Session?
+
+    /** For the 7-night rolling average (§8 Screen 1) — only fully-enriched nights have a trustworthy index to average. */
+    @Query("SELECT * FROM sessions WHERE enrichmentState = 'ENRICHED' ORDER BY startedAt DESC LIMIT :limit")
+    suspend fun getRecentEnriched(limit: Int): List<Session>
+
     @Query(
         "UPDATE sessions SET endedAt = :endedAt, state = :state, cleanShutdown = :cleanShutdown, " +
             "coveragePct = :coveragePct, gapSeconds = :gapSeconds WHERE id = :sessionId"

@@ -276,10 +276,94 @@ are ready for Phase 6 to read; the UI for them is deliberately not built early.
 - [ ] Confirm `RespiratoryRateRecord` data (read but not yet used by any metric) is actually
       worth surfacing once Phase 6 builds report screens, or drop it if Garmin never populates it.
 
-## Phase 6+ — not started
+## Phase 6 — report screens 1–3 + labeling loop
 
-Report UI, labeling loop, correlation engine, PDF export, trained classifier swap — all pending
-the Phase 3/4/5 checklists above on real hardware with real audio and a real Garmin sync.
+Built ahead of Phase 3/4/5's own real-hardware checklists, same tradeoff as each prior phase.
+
+**Fully unit-tested (pure Kotlin, 143 core-logic tests total now):**
+
+- `core-logic/.../report/NightSummaryText` — builds Screen 1's plain-language sentence ("9
+  episodes, mostly between 2:10 and 3:40, clustered in light sleep") from episode onsets/
+  offsets/stages. Clock-time formatting and stage display names are injected as functions so
+  the sentence-shape logic itself stays timezone/locale-free and testable.
+- `core-logic/.../report/IndexTrend` — the 7-night rolling average and delta the spec calls for
+  on Screen 1, including the "first tracked night has no average yet" null case.
+- `core-logic/.../report/TimelineLayout` — maps night-window timestamps to normalized `[0, 1]`
+  x-axis fractions for Screen 2's Canvas; the actual drawing is Android-only and unverified, but
+  the coordinate math every layer (stage band, HR line, episode ticks, gap hatching) shares is
+  fully tested here, including out-of-window clamping.
+- `core-logic/.../report/WaveformDownsampler` — peak-per-column amplitude reduction for Screen
+  3's clip view.
+- `core-logic/.../report/SpectrogramGenerator` — short-time band-energy spectrogram for the same
+  screen, reusing Phase 2's `BandEnergyAnalyzer` rather than a second FFT pipeline just for
+  display (§8: "grinding shows a broadband smear vs. snoring's harmonic stack — it makes
+  labeling fast").
+
+**Written but unverified (needs Compose Canvas, AudioTrack, and a real device to actually see
+render — this sandbox has none of them):**
+
+- `data/repo/LabelRepository` — the confirm/reject/unsure loop's persistence: fetches unlabeled
+  episodes for a session, writes `Episode.userLabel` and an append-only `Label` history row
+  (`Label` feeds Phase 9's retraining export).
+- `data/repo/ReportRepository` — read access for Screens 1–2: most-recent-ended session, night
+  metrics, episodes, sleep stages, heart rate, gaps, and the prior-nights index history
+  `IndexTrend` needs (only fully `ENRICHED` nights count toward the rolling average).
+- `clips/AudioPlayer` — one-shot `AudioTrack.MODE_STATIC` playback straight from a decrypted
+  in-memory `ShortArray`, never a temp file (§8: "decrypt to memory, never to a temp file"). A
+  fresh `AudioTrack` per `play()` call, since every clip is ≤12s (§6.3) — simpler than a
+  reusable streaming track for something this short.
+- `ClipRepository.readClip` — thin pass-through to `ClipStore.readClip` so the report/labeling
+  layer doesn't need its own handle on `ClipStore`.
+- `ui/report/ReportViewModel` — loads a session and maps it into `ReportUiState`: the index,
+  confidence grade, delta, summary sentence, and every Screen 2 layer already expressed as
+  `TimelineLayout` fractions so the Canvas code doesn't do timestamp math itself. Leads with
+  `serviceDiedEarly` (from `Session.cleanShutdown`) so an incomplete night never renders as a
+  reassuringly low index.
+- `ui/report/LastNightScreen` (Screen 1) — the index card, confidence badge, delta text, and
+  summary sentence, with loading/no-session/stopped-early states.
+- `ui/report/TimelineScreen` (Screen 2) — a `Canvas` with pinch-to-zoom and tap-to-select-episode
+  gestures, drawing sleep-stage color bands, grey gap hatching, an HR line, and episode ticks
+  whose height reflects peak score, all sharing one x-axis via `TimelineLayout`.
+- `ui/report/EpisodeDetailViewModel` — Screen 3's engine: builds an unlabeled-episode queue for
+  the session (the tapped episode always leads it, even if already labeled — re-review from the
+  timeline), decrypts+downsamples+spectrograms the episode's clip, and advances the queue on
+  every label or skip so a whole night's clips can be swiped through without leaving the screen
+  (§8: "ten clips should take under a minute").
+- `ui/report/EpisodeDetailScreen` (Screen 3) — waveform + spectrogram `Canvas` views, play/stop
+  buttons, the three labeling buttons, and a horizontal-drag gesture that advances to the next
+  unlabeled clip without recording a label (labeling itself only ever happens via an explicit
+  button tap — a swipe must never silently count as a judgment).
+- `MainActivity` — a small in-memory `ReportDestination` state machine (`LastNight` →
+  `Timeline` → `Detail`) layered on top of the existing onboarding/start-night `when`, reached
+  via a new "Last night's report" button on `StartNightScreen`. `EpisodeDetailViewModel` is
+  keyed by the tapped episode id (`viewModel(key = ...)`) so re-entering Screen 3 for a
+  different episode gets a fresh instance rather than reusing an already-`started` one.
+
+**Not done, and can't be done here:** actually seeing any of this render, pinch-zoom and tap-hit
+math against a real touch digitizer, `AudioTrack` playback against real hardware output, and
+whether the swipe-gesture threshold (`120px`) feels right on an actual screen density — all of
+that needs a device. There's no navigation animation/transition between the three screens either
+(a plain `when` swap) — fine for now, revisit if it feels jarring on-device.
+
+### Before calling Phase 6 done, on the real device
+
+- [ ] Confirm `AudioTrack.MODE_STATIC` playback actually plays a decrypted clip audibly and
+      `stop()`/`release()` don't leak across repeated play taps.
+- [ ] Pinch-to-zoom and tap-to-select on the real `TimelineScreen` Canvas — confirm the tap
+      tolerance (`40px`) and zoom range (`1x`–`8x`) feel right on the target screen density.
+- [ ] Run the labeling loop end-to-end against a real night with real episodes and clips: tap
+      through Screen 1 → Screen 2 → an episode tick → Screen 3, label it, confirm it advances to
+      the next unlabeled episode and `Episode.userLabel`/`labels` both update.
+- [ ] Confirm the horizontal-drag "skip" gesture doesn't fire accidentally during an ordinary
+      vertical scroll or a deliberate waveform-area tap.
+- [ ] Time an actual 10-clip labeling pass against §8's "under a minute" goal.
+- [ ] Re-run Phase 3/4/5's still-outstanding device checklists — Phase 6 only has real data to
+      show once detection, clip capture, and enrichment have actually run on a real night.
+
+## Phase 7+ — not started
+
+Correlation engine, PDF export, trained classifier swap — all pending the Phase 3/4/5/6
+checklists above on real hardware with real audio and a real Garmin sync.
 
 The full Room schema for these phases (§7) is already in place (`app/.../data/db/entities`)
 so adding them later won't require a destructive migration, but their DAOs are unused CRUD
