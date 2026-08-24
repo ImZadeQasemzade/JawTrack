@@ -21,12 +21,15 @@ import kotlinx.coroutines.launch
 
 data class NightUiState(
     val isRecording: Boolean = false,
+    val isCalibratingNow: Boolean = false,
     val elapsedMillis: Long = 0,
     val silentDeathAtMillis: Long? = null,
     val micPermissionGranted: Boolean = false,
     val notificationPermissionGranted: Boolean = true,
     val batteryOptimizationIgnored: Boolean = false,
-    val isCharging: Boolean = false
+    val isCharging: Boolean = false,
+    /** No RoomProfile yet (§4.5): the only night this app will run is a calibration night. */
+    val hasRoomProfile: Boolean = false
 )
 
 class NightViewModel(application: Application) : AndroidViewModel(application) {
@@ -41,12 +44,25 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     init {
         refreshEnvironmentStatus()
         viewModelScope.launch { reconcileMostRecentSession() }
+        viewModelScope.launch { refreshRoomProfileStatus() }
         viewModelScope.launch {
+            var wasRecording = false
             RecordingService.isRunning.collect { running ->
                 _uiState.value = _uiState.value.copy(isRecording = running)
-                if (running) startElapsedTicker()
+                if (running) {
+                    startElapsedTicker()
+                } else if (wasRecording) {
+                    // A calibration night may have just finished and produced a fresh profile.
+                    refreshRoomProfileStatus()
+                }
+                wasRecording = running
             }
         }
+    }
+
+    private suspend fun refreshRoomProfileStatus() {
+        val hasProfile = app.sessionRepository.getMostRecentRoomProfile() != null
+        _uiState.value = _uiState.value.copy(hasRoomProfile = hasProfile)
     }
 
     fun refreshEnvironmentStatus() {
@@ -108,10 +124,10 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startElapsedTicker() {
         viewModelScope.launch {
-            val session = app.sessionRepository.getMostRecentSession()
-            val startedAt = session?.startedAt ?: return@launch
+            val session = app.sessionRepository.getMostRecentSession() ?: return@launch
+            _uiState.value = _uiState.value.copy(isCalibratingNow = session.calibrationOnly)
             while (RecordingService.isRunning.value) {
-                _uiState.value = _uiState.value.copy(elapsedMillis = System.currentTimeMillis() - startedAt)
+                _uiState.value = _uiState.value.copy(elapsedMillis = System.currentTimeMillis() - session.startedAt)
                 delay(1_000)
             }
         }

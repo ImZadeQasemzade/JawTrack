@@ -38,6 +38,7 @@ class RecordingService : Service(), AudioCapture.Listener {
     private lateinit var notificationManager: RecordingNotificationManager
     private lateinit var ringBuffer: AudioRingBuffer
     private lateinit var audioCapture: AudioCapture
+    private var calibrationSampler: CalibrationSampler? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     private var sessionId: Long = -1
@@ -118,6 +119,9 @@ class RecordingService : Service(), AudioCapture.Listener {
                 calibrationOnly = calibrationOnly
             )
             audioCapture.start()
+            if (calibrationOnly) {
+                calibrationSampler = CalibrationSampler(ringBuffer).also { it.start(serviceScope) }
+            }
             runHeartbeatLoop()
         }
         runNotificationTicker()
@@ -162,6 +166,12 @@ class RecordingService : Service(), AudioCapture.Listener {
         serviceScope.launch {
             audioCapture.stop()
             if (sessionId >= 0) {
+                calibrationSampler?.let { sampler ->
+                    sampler.stop()
+                    sampler.finalizeProfile()?.let { floors ->
+                        app.sessionRepository.saveRoomProfile(sessionId, floors, System.currentTimeMillis())
+                    }
+                }
                 app.sessionRepository.endSession(
                     sessionId = sessionId,
                     startedAt = sessionStartedAt,

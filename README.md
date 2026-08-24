@@ -5,7 +5,7 @@ heart-rate/sleep data via Health Connect. Wellness self-tracking only — not a 
 no diagnosis or treatment claims. See `docs/JawTrackSpec.md` for the full technical spec this
 build follows (phases, algorithms, data model, acceptance criteria).
 
-## Status: Phase 0 + Phase 1 built, not yet device-verified
+## Status: Phase 0–2 built, not yet device-verified
 
 The spec is explicit that later phases must not start before Phase 1 has survived multiple
 real nights on the target phone (§9, §12): *"Phase 1 is the real risk phase... Everything
@@ -27,11 +27,15 @@ real device before Phase 2+ can start.
   tables — only `Session` and `Gap` are actively written to in Phase 1.
 - Bed-partner consent notice, no-INTERNET-permission privacy guarantee (enforced by a test),
   `allowBackup=false`.
+- Calibration night (§4.5): a from-scratch FFT + third-octave band analyzer measures the
+  room's per-band noise floor across the night via reservoir sampling, without ever persisting
+  raw audio. The first-ever session is forced into calibration mode; a "Recalibrate room"
+  option is available afterward.
 
-**What's intentionally not built yet:** calibration, the audio-classifier gates and episode
-assembly, clip encryption, Health Connect sync, report screens, correlation engine, PDF
-export, the trained classifier head. These are Phases 2–9 and depend on Phase 1 having proven
-itself overnight first.
+**What's intentionally not built yet:** the audio-classifier gates and episode assembly, clip
+encryption, Health Connect sync, report screens, correlation engine, PDF export, the trained
+classifier head. These are Phases 3–9 and depend on Phase 1 (and now Phase 2) having proven
+themselves overnight first.
 
 ## Repo layout
 

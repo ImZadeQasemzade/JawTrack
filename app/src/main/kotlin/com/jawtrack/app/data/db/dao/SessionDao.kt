@@ -28,6 +28,9 @@ interface SessionDao {
     @Query("UPDATE sessions SET lastHeartbeatAt = :timestamp WHERE id = :sessionId")
     suspend fun updateHeartbeat(sessionId: Long, timestamp: Long)
 
+    @Query("UPDATE sessions SET roomProfileId = :roomProfileId WHERE id = :sessionId")
+    suspend fun updateRoomProfile(sessionId: Long, roomProfileId: Long)
+
     @Query(
         "UPDATE sessions SET endedAt = :endedAt, state = :state, cleanShutdown = :cleanShutdown, " +
             "coveragePct = :coveragePct, gapSeconds = :gapSeconds WHERE id = :sessionId"

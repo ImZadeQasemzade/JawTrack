@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         StartNightScreen(
                             state = state,
-                            onStartNight = { viewModel.startNight() },
+                            onStartNight = { calibrationOnly -> viewModel.startNight(calibrationOnly) },
                             onStopNight = { viewModel.stopNight() },
                             onDismissSilentDeathBanner = { viewModel.dismissSilentDeathBanner() },
                             onOpenOnboarding = { showOnboarding = true }

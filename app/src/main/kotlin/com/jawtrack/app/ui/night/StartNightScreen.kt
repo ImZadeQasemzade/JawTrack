@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun StartNightScreen(
     state: NightUiState,
-    onStartNight: () -> Unit,
+    onStartNight: (calibrationOnly: Boolean) -> Unit,
     onStopNight: () -> Unit,
     onDismissSilentDeathBanner: () -> Unit,
     onOpenOnboarding: () -> Unit
@@ -45,7 +45,11 @@ fun StartNightScreen(
         }
 
         if (state.isRecording) {
-            RecordingCard(elapsedMillis = state.elapsedMillis, onStopNight = onStopNight)
+            RecordingCard(
+                elapsedMillis = state.elapsedMillis,
+                isCalibratingNow = state.isCalibratingNow,
+                onStopNight = onStopNight
+            )
         } else {
             ReadyCard(state = state, onStartNight = onStartNight, onOpenOnboarding = onOpenOnboarding)
         }
@@ -79,7 +83,7 @@ private fun SilentDeathBanner(atMillis: Long, onDismiss: () -> Unit, onOpenSetti
 }
 
 @Composable
-private fun RecordingCard(elapsedMillis: Long, onStopNight: () -> Unit) {
+private fun RecordingCard(elapsedMillis: Long, isCalibratingNow: Boolean, onStopNight: () -> Unit) {
     Card {
         Column(
             modifier = Modifier
@@ -88,7 +92,13 @@ private fun RecordingCard(elapsedMillis: Long, onStopNight: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Listening", style = MaterialTheme.typography.titleLarge)
+            Text(if (isCalibratingNow) "Calibrating your room" else "Listening", style = MaterialTheme.typography.titleLarge)
+            if (isCalibratingNow) {
+                Text(
+                    "Measuring the room's background noise. No detection runs tonight — just leave it be.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             Text(formatElapsed(elapsedMillis), style = MaterialTheme.typography.displaySmall)
             Button(onClick = onStopNight) { Text("Stop night") }
         }
@@ -96,7 +106,9 @@ private fun RecordingCard(elapsedMillis: Long, onStopNight: () -> Unit) {
 }
 
 @Composable
-private fun ReadyCard(state: NightUiState, onStartNight: () -> Unit, onOpenOnboarding: () -> Unit) {
+private fun ReadyCard(state: NightUiState, onStartNight: (Boolean) -> Unit, onOpenOnboarding: () -> Unit) {
+    val canStart = state.micPermissionGranted && state.isCharging
+
     Card {
         Column(
             modifier = Modifier
@@ -115,11 +127,23 @@ private fun ReadyCard(state: NightUiState, onStartNight: () -> Unit, onOpenOnboa
                 TextButton(onClick = onOpenOnboarding) { Text("Fix setup") }
             }
 
-            Button(
-                onClick = onStartNight,
-                enabled = state.micPermissionGranted && state.isCharging
-            ) {
-                Text("Start night")
+            if (!state.hasRoomProfile) {
+                Text(
+                    "First night: JawTrack needs to measure your room's background noise " +
+                        "before it can tell grinding apart from everything else. No detection " +
+                        "runs tonight — just leave the phone in place overnight (§4.5).",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Button(onClick = { onStartNight(true) }, enabled = canStart) {
+                    Text("Start calibration night")
+                }
+            } else {
+                Button(onClick = { onStartNight(false) }, enabled = canStart) {
+                    Text("Start night")
+                }
+                TextButton(onClick = { onStartNight(true) }, enabled = canStart) {
+                    Text("Recalibrate room (new room, travel)")
+                }
             }
 
             if (!state.isCharging) {
