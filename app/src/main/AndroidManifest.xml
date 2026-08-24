@@ -10,9 +10,20 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Read-only Health Connect scopes (§5.1) -- Garmin Connect writes these, JawTrack only reads. -->
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_RESPIRATORY_RATE" />
+
     <uses-feature
         android:name="android.hardware.microphone"
         android:required="true" />
+
+    <!-- Needed to detect/launch the Health Connect app on Android 10-13, where it isn't built in (§5.1). -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+    </queries>
 
     <application
         android:name=".JawTrackApp"
@@ -39,6 +50,27 @@
             android:name=".recording.RecordingService"
             android:foregroundServiceType="microphone"
             android:exported="false" />
+
+        <!-- Health Connect privacy rationale (§5.1) -- unverified manifest wiring, see the
+             large comment atop HealthConnectRationaleActivity.kt. -->
+        <activity
+            android:name=".health.HealthConnectRationaleActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.connect.action.SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name=".HealthConnectPermissionsRationaleAlias"
+            android:exported="true"
+            android:targetActivity=".health.HealthConnectRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
 
     </application>
 

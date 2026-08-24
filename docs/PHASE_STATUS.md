@@ -202,10 +202,84 @@ here is much lower than Phase 3's MediaPipe integration — but "should work" is
       3's detection pipeline actually produces a valid episode, so they're only truly testable
       together on a real night.
 
-## Phase 5+ — not started
+## Phase 5 — Health Connect sync + enrichment
 
-Health Connect sync, report UI, labeling loop, correlation engine, PDF export, trained
-classifier swap — all pending the Phase 3/4 checklists above on real hardware with real audio.
+Built ahead of Phase 3/4's own real-hardware checklists, same tradeoff as each prior phase.
+
+**Fully unit-tested (pure Kotlin, 114 core-logic tests total now):**
+
+- `core-logic/.../enrichment/SleepStageJoiner` — joins an episode to whichever sleep stage it
+  overlaps most by duration (§5.3 step 2), and sums non-`AWAKE`/`OUT_OF_BED` stage time for the
+  episodes-per-hour-of-sleep denominator. §5.1's own framing ("stage intervals are minutes
+  long") is exactly why this join is trustworthy where per-episode heart rate isn't.
+- `core-logic/.../enrichment/NightMetricsCalculator` — episode count, the JawTrack Index
+  (episodes/hour *of sleep*, not of time-in-bed), total grinding seconds, longest episode,
+  stage distribution (episode counts per stage, not time spent), snore index (§7.1).
+- `core-logic/.../enrichment/ConfidenceGrader` — the A/B/C grade §7.1 calls "important and
+  often skipped." The spec names five inputs (coverage %, room noise floor, speech-rejection
+  count, labeled proportion, clean shutdown) but not exact weights or thresholds; the weights,
+  the speech-rejections-per-hour cap, and the quiet/noisy floor reference points in this file
+  are a documented, defensible interpretation, not values taken from the spec — flagged as
+  such in the file's own doc comment, and worth revisiting once real nights exist to compare
+  grades against.
+- `core-logic/.../enrichment/StageDistributionJson` — same hand-rolled flat-object codec
+  pattern as `RoomProfileJson`, for `NightMetrics.stageDistributionJson`.
+
+**Written but unverified (needs a real Health Connect provider with actual Garmin-synced
+data — this sandbox has neither):**
+
+- `health/HealthConnectRepo` — reads `HeartRateRecord`, `HeartRateVariabilityRmssdRecord`,
+  `SleepSessionRecord` (mapping its `stages` to plain string labels), and
+  `RespiratoryRateRecord` over a session's window. `androidx.health.connect` is a stable,
+  long-documented Jetpack library rather than a fast-moving third-party one like the MediaPipe
+  integration, so confidence in the API shape is higher than `YamnetGate2Classifier`'s — but
+  nothing here has compiled or run either.
+- `health/HealthConnectRationaleActivity` + the manifest's rationale activity/activity-alias —
+  Health Connect refuses to show its permission dialog without one (§5.1). JawTrack has no
+  hosted privacy policy (no server exists), so this states the same in-app commitments the
+  rest of the app already makes, rather than linking to a page that doesn't exist. The exact
+  manifest incantation Health Connect expects has shifted as it moved from a standalone app
+  into AOSP across `connect-client` versions — flagged unverified in both files.
+- `health/EnrichmentWorker` — reads the window, joins episodes to stages, computes metrics via
+  the tested core-logic pieces above, and marks the session `PARTIAL` + retries with backoff
+  if Health Connect returned literally nothing (§5.3's "watch hasn't synced" case), or
+  `ENRICHED` once real data came back. Enqueued from `MainActivity.onResume()` — "on app
+  foreground in the morning," per the spec.
+- Onboarding gained an optional "Connect Health Connect" step using
+  `PermissionController.createRequestPermissionResultContract()`. Deliberately non-blocking —
+  recording works fully without Health Connect; enrichment just never runs.
+- `Session` gained `speechRejectedCount`, `snoringRejectedCount` (both counters, wired from
+  `FrameWindower`'s Gate 2 verdicts — snoring feeds the night's snore index for free, exactly
+  as §7.1 says it should) and `enrichmentState` (`PENDING`/`PARTIAL`/`ENRICHED`, independent of
+  the recording lifecycle's own `SessionState`).
+
+**Not done, and can't be done here:** there's no "waiting on Garmin sync" banner yet, because
+there's no report screen for it to live on — that's Phase 6. `EnrichmentState`/`NightMetrics`
+are ready for Phase 6 to read; the UI for them is deliberately not built early.
+
+### Before calling Phase 5 done, on the real device
+
+- [ ] Complete §2.1.1 for real: install Health Connect, sync a real Garmin night, and confirm
+      `SleepSessionRecord.stages` is actually populated (vs. an envelope-only session) and what
+      `HeartRateRecord`'s real sample cadence is. This was always the first Phase 0 task and
+      still hasn't happened — everything in this phase is built against the *documented* shape
+      of these records, not a verified one.
+- [ ] Fix whatever's wrong in the manifest's rationale activity/activity-alias wiring so the
+      Health Connect permission dialog actually appears — check against current docs, not this
+      repo's guess.
+- [ ] Confirm a real `EnrichmentWorker` run against synced data produces a sensible
+      `NightMetrics` row, and that the `PARTIAL`/retry path actually triggers when run before
+      the watch has synced.
+- [ ] Sanity-check `ConfidenceGrader`'s weights against a few real nights of known quality
+      (e.g. a night you know had bad coverage should grade lower than a clean one) — they're
+      currently reasoned-through defaults, not tuned.
+- [ ] Confirm `RespiratoryRateRecord` data (read but not yet used by any metric) is actually
+      worth surfacing once Phase 6 builds report screens, or drop it if Garmin never populates it.
+
+## Phase 6+ — not started
+
+Report UI, labeling loop, correlation engine, PDF export, trained classifier swap — all pending
+the Phase 3/4/5 checklists above on real hardware with real audio and a real Garmin sync.
 
 The full Room schema for these phases (§7) is already in place (`app/.../data/db/entities`)
 so adding them later won't require a destructive migration, but their DAOs are unused CRUD

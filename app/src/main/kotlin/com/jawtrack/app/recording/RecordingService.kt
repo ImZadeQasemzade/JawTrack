@@ -159,8 +159,24 @@ class RecordingService : Service(), AudioCapture.Listener {
             ringBuffer = ringBuffer,
             energyGate = energyGate,
             gate2Classifier = gate2Classifier,
-            onEpisode = ::onEpisodeAssembled
+            onEpisode = ::onEpisodeAssembled,
+            onSpeechRejected = ::onSpeechRejected,
+            onSnoringRejected = ::onSnoringRejected
         ).also { it.start(serviceScope) }
+    }
+
+    private fun onSpeechRejected() {
+        val currentSessionId = sessionId
+        if (currentSessionId >= 0) {
+            serviceScope.launch { app.sessionRepository.incrementSpeechRejectedCount(currentSessionId) }
+        }
+    }
+
+    private fun onSnoringRejected() {
+        val currentSessionId = sessionId
+        if (currentSessionId >= 0) {
+            serviceScope.launch { app.sessionRepository.incrementSnoringRejectedCount(currentSessionId) }
+        }
     }
 
     private fun onEpisodeAssembled(candidate: EpisodeCandidate) {

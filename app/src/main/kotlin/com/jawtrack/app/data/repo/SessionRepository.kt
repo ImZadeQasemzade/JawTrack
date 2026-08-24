@@ -39,6 +39,14 @@ class SessionRepository(private val db: JawTrackDatabase) {
         db.gapDao().insert(Gap(sessionId = sessionId, startAt = startAt, endAt = endAt, reason = reason))
     }
 
+    suspend fun incrementSpeechRejectedCount(sessionId: Long) {
+        db.sessionDao().incrementSpeechRejectedCount(sessionId)
+    }
+
+    suspend fun incrementSnoringRejectedCount(sessionId: Long) {
+        db.sessionDao().incrementSnoringRejectedCount(sessionId)
+    }
+
     suspend fun getMostRecentRoomProfile(): RoomProfile? = db.roomProfileDao().getMostRecent()
 
     /** Persists a calibration night's result (§4.5) and links it to the session that produced it. */

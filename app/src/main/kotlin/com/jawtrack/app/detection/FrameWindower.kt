@@ -42,6 +42,10 @@ class FrameWindower(
     private val energyGate: EnergyGate,
     private val gate2Classifier: Gate2Classifier?,
     private val onEpisode: (EpisodeCandidate) -> Unit,
+    /** Counter only, per §6.4 — fires without the flagged buffer ever being written anywhere. */
+    private val onSpeechRejected: () -> Unit = {},
+    /** Feeds the night's snore index (§7.1). */
+    private val onSnoringRejected: () -> Unit = {},
     private val pollIntervalMillis: Long = SMALL_FRAME_POLL_INTERVAL_MILLIS
 ) {
     private val bandAnalyzer = BandEnergyAnalyzer(AudioConfig.SAMPLE_RATE_HZ, GATE3_FRAME_SAMPLES)
@@ -87,8 +91,12 @@ class FrameWindower(
             if (gate2Result != null) {
                 rejectedClasses = gate2Result.classifications.map { it.label }
                 when (Gate2RejectionPolicy.evaluate(gate2Result.classifications)) {
-                    Gate2Verdict.MUST_DESTROY -> return // speech: buffer touched nothing, not even a scored frame (§6.4)
+                    Gate2Verdict.MUST_DESTROY -> {
+                        onSpeechRejected()
+                        return // speech: buffer touched nothing, not even a scored frame (§6.4)
+                    }
                     Gate2Verdict.REJECT -> {
+                        if ("Snoring" in rejectedClasses) onSnoringRejected()
                         episodeAssembler.process(FrameResult(now, 0.0, rmsDb, rejectedClasses = rejectedClasses))
                             .forEach(onEpisode)
                         return

@@ -5,12 +5,12 @@ heart-rate/sleep data via Health Connect. Wellness self-tracking only — not a 
 no diagnosis or treatment claims. See `docs/JawTrackSpec.md` for the full technical spec this
 build follows (phases, algorithms, data model, acceptance criteria).
 
-## Status: Phase 0–4 built, not yet device-verified
+## Status: Phase 0–5 built, not yet device-verified
 
 The spec is explicit that later phases must not start before Phase 1 has survived multiple
 real nights on the target phone (§9, §12): *"Phase 1 is the real risk phase... Everything
 downstream is worthless if the recording stops at 2 a.m."* Phases 0–2 honored that gate before
-moving on; Phases 3 and 4 were then each built ahead of the prior phase's real-hardware
+moving on; Phases 3, 4, and 5 were then each built ahead of the prior phase's real-hardware
 checklist, at explicit request. See `docs/PHASE_STATUS.md` for exactly what's done, what's
 unverified, and what still needs a real device.
 
@@ -49,9 +49,19 @@ unverified, and what still needs a real device.
   expired clips daily and on launch; a "Delete all audio" button does it immediately, no undo.
   The 12s clip-length cap and the retention-expiry math are pure Kotlin and unit-tested; the
   actual Keystore/file I/O needs a device to verify, same as Phase 3's ML wiring.
+- Health Connect sync + enrichment (§5, §7.1): `SleepStageJoiner` (episode-to-sleep-stage by
+  overlap), `NightMetricsCalculator` (the JawTrack Index, total grinding time, snore index),
+  and `ConfidenceGrader` (the A/B/C grade §7.1 calls "important and often skipped" — the spec
+  names five inputs but not exact weights, so this is a documented, defensible interpretation,
+  not spec'd values) are pure Kotlin and unit-tested. `HealthConnectRepo` and `EnrichmentWorker`
+  are written against `androidx.health.connect`'s documented (stable, long-established) API but
+  unverified — no real Health Connect provider or Garmin-synced data exists in this sandbox to
+  exercise them against. A session left `PARTIAL` (watch hasn't synced) retries with backoff;
+  there's no "waiting on sync" banner yet since there's no report screen for it to live on —
+  that's Phase 6.
 
-**What's intentionally not built yet:** Health Connect sync, report screens, correlation
-engine, PDF export, the trained classifier head. These are Phases 5–9.
+**What's intentionally not built yet:** report screens, the labeling loop, correlation engine,
+PDF export, the trained classifier head. These are Phases 6–9.
 
 ## Repo layout
 
@@ -79,7 +89,7 @@ sandbox environment.
 CI (`.github/workflows/ci.yml`) runs `core-logic` tests on every push (no SDK required) and a
 full `app` lint + unit test + assemble job using `android-actions/setup-android`.
 
-## Before touching Phase 5+
+## Before touching Phase 6+
 
 Do the Phase 0 verification tasks from the spec (§2.1) on the actual target phone + Garmin
 watch — none of this can be done from source code alone:

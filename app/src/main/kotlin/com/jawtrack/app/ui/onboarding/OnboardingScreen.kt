@@ -25,6 +25,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.health.connect.client.PermissionController
+import com.jawtrack.app.health.HealthConnectPermissions
 import com.jawtrack.app.recording.OemBatteryAdvisor
 import com.jawtrack.app.ui.night.NightUiState
 
@@ -39,7 +41,8 @@ import com.jawtrack.app.ui.night.NightUiState
 fun OnboardingScreen(
     state: NightUiState,
     onRefreshStatus: () -> Unit,
-    onContinue: () -> Unit
+    onContinue: () -> Unit,
+    onHealthConnectStatusChanged: () -> Unit
 ) {
     val context = LocalContext.current
     var consentAcknowledged by remember { mutableStateOf(false) }
@@ -61,6 +64,10 @@ fun OnboardingScreen(
     ) { onRefreshStatus() }
 
     val oemGuidance = remember { OemBatteryAdvisor.guidanceFor(context) }
+
+    val healthConnectPermissionLauncher = rememberLauncherForActivityResult(
+        PermissionController.createRequestPermissionResultContract()
+    ) { onHealthConnectStatusChanged() }
 
     Column(
         modifier = Modifier
@@ -121,6 +128,25 @@ fun OnboardingScreen(
                 oemSettingsLauncher.launch(intent)
             }) {
                 Text("Open settings")
+            }
+        }
+
+        SetupStep(
+            title = "Health Connect (optional)",
+            done = state.healthConnectPermissionsGranted,
+            body = if (!state.healthConnectAvailable) {
+                "Not available on this phone/OS version. JawTrack still works fully without it " +
+                    "— you just won't get sleep-stage or heart-rate context on your episodes."
+            } else {
+                "Lets JawTrack show which sleep stage your grinding fell in and how your night's " +
+                    "heart rate looked, using whatever Garmin Connect has already synced. " +
+                    "Read-only, and entirely optional — recording works fine without it."
+            }
+        ) {
+            if (state.healthConnectAvailable) {
+                Button(onClick = { healthConnectPermissionLauncher.launch(HealthConnectPermissions.REQUIRED) }) {
+                    Text("Connect Health Connect")
+                }
             }
         }
 

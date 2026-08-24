@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.jawtrack.app.health.EnrichmentWorker
 import com.jawtrack.app.ui.OnboardingPrefs
 import com.jawtrack.app.ui.night.NightViewModel
 import com.jawtrack.app.ui.night.StartNightScreen
@@ -45,7 +46,8 @@ class MainActivity : ComponentActivity() {
                             onContinue = {
                                 OnboardingPrefs.setCompleted(this)
                                 showOnboarding = false
-                            }
+                            },
+                            onHealthConnectStatusChanged = { viewModel.refreshHealthConnectStatus() }
                         )
                     } else {
                         StartNightScreen(
@@ -65,5 +67,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.refreshEnvironmentStatus()
+        EnrichmentWorker.enqueue(this) // §5.3: "enqueued on app foreground in the morning"
     }
 }

@@ -77,6 +77,10 @@ dependencies {
     // Also requires a YAMNet .tflite model under app/src/main/assets/ — not bundled here.
     implementation("com.google.mediapipe:tasks-audio:0.10.14")
 
+    // Health Connect (§5.1, D3). Version unverified for the same reason as above -- check for
+    // a newer stable release before building.
+    implementation("androidx.health.connect:connect-client:1.1.0-alpha07")
+
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.6.1")

@@ -10,6 +10,8 @@ import androidx.lifecycle.viewModelScope
 import com.jawtrack.app.JawTrackApp
 import com.jawtrack.app.data.db.entities.Session
 import com.jawtrack.app.data.db.entities.SessionState
+import com.jawtrack.app.health.HealthConnectAvailability
+import com.jawtrack.app.health.HealthConnectRepo
 import com.jawtrack.app.recording.OemBatteryAdvisor
 import com.jawtrack.app.recording.RecordingService
 import com.jawtrack.corelogic.watchdog.HeartbeatEvaluator
@@ -29,7 +31,10 @@ data class NightUiState(
     val batteryOptimizationIgnored: Boolean = false,
     val isCharging: Boolean = false,
     /** No RoomProfile yet (§4.5): the only night this app will run is a calibration night. */
-    val hasRoomProfile: Boolean = false
+    val hasRoomProfile: Boolean = false,
+    /** Health Connect (§5.1) is optional — recording works without it, enrichment just won't run. */
+    val healthConnectAvailable: Boolean = false,
+    val healthConnectPermissionsGranted: Boolean = false
 )
 
 class NightViewModel(application: Application) : AndroidViewModel(application) {
@@ -45,6 +50,7 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
         refreshEnvironmentStatus()
         viewModelScope.launch { reconcileMostRecentSession() }
         viewModelScope.launch { refreshRoomProfileStatus() }
+        viewModelScope.launch { refreshHealthConnectStatusSuspend() }
         viewModelScope.launch {
             var wasRecording = false
             RecordingService.isRunning.collect { running ->
@@ -63,6 +69,21 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun refreshRoomProfileStatus() {
         val hasProfile = app.sessionRepository.getMostRecentRoomProfile() != null
         _uiState.value = _uiState.value.copy(hasRoomProfile = hasProfile)
+    }
+
+    /** Also called after the Health Connect permission launcher returns, from the onboarding screen. */
+    fun refreshHealthConnectStatus() {
+        viewModelScope.launch { refreshHealthConnectStatusSuspend() }
+    }
+
+    private suspend fun refreshHealthConnectStatusSuspend() {
+        val repo = HealthConnectRepo(getApplication())
+        val available = repo.availability() == HealthConnectAvailability.AVAILABLE
+        val granted = if (available) repo.hasAllPermissions() else false
+        _uiState.value = _uiState.value.copy(
+            healthConnectAvailable = available,
+            healthConnectPermissionsGranted = granted
+        )
     }
 
     fun refreshEnvironmentStatus() {

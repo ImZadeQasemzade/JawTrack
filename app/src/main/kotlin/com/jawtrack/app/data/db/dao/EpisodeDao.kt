@@ -6,7 +6,6 @@ import androidx.room.Query
 import androidx.room.Update
 import com.jawtrack.app.data.db.entities.Episode
 
-/** Unused until Phase 3 (episode assembly) writes its first row. */
 @Dao
 interface EpisodeDao {
 
@@ -21,4 +20,8 @@ interface EpisodeDao {
 
     @Query("SELECT * FROM episodes WHERE userLabel IS NULL AND sessionId = :sessionId ORDER BY onsetAt ASC")
     suspend fun getUnlabeledForSession(sessionId: Long): List<Episode>
+
+    /** Set by EnrichmentWorker's sleep-stage join (§5.3 step 2). */
+    @Query("UPDATE episodes SET sleepStage = :stage WHERE id = :episodeId")
+    suspend fun updateSleepStage(episodeId: Long, stage: String)
 }
