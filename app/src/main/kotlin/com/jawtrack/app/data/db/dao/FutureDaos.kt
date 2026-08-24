@@ -3,7 +3,6 @@ package com.jawtrack.app.data.db.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
-import com.jawtrack.app.data.db.entities.AudioClip
 import com.jawtrack.app.data.db.entities.DailyFactors
 import com.jawtrack.app.data.db.entities.HeartRateSample
 import com.jawtrack.app.data.db.entities.HrvSample
@@ -18,14 +17,6 @@ import com.jawtrack.app.data.db.entities.SleepStage
  * schema now so it doesn't need migrating later; each becomes active in the phase noted
  * on its entity). Grouped here rather than one-file-each while they're this small.
  */
-
-@Dao
-interface AudioClipDao { // Phase 4
-    @Insert suspend fun insert(clip: AudioClip): Long
-    @Query("SELECT * FROM audio_clips WHERE episodeId = :episodeId") suspend fun getForEpisode(episodeId: Long): List<AudioClip>
-    @Query("SELECT * FROM audio_clips WHERE expiresAt <= :now") suspend fun getExpired(now: Long): List<AudioClip>
-    @Query("DELETE FROM audio_clips WHERE id = :id") suspend fun deleteById(id: Long)
-}
 
 @Dao
 interface HeartRateSampleDao { // Phase 5

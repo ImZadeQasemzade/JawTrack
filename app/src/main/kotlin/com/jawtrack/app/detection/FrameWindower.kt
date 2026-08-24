@@ -1,6 +1,7 @@
 package com.jawtrack.app.detection
 
 import android.util.Log
+import com.jawtrack.app.clips.ClipStore
 import com.jawtrack.app.ml.Gate2Classifier
 import com.jawtrack.app.ml.Gate2Result
 import com.jawtrack.app.recording.AudioConfig
@@ -112,7 +113,13 @@ class FrameWindower(
         )
         val dominantBandHz = bandDb.filterKeys { it in GRINDING_BAND_RANGE_HZ }.maxByOrNull { it.value }?.key
 
-        episodeAssembler.process(FrameResult(now, score, rmsDb, dominantBandHz, rejectedClasses)).forEach(onEpisode)
+        // Snapshotting the ring buffer here (only invoked by EpisodeAssembler if this frame is
+        // the episode's true onset) gives up to 12s trailing right up to this instant -- the
+        // "10s pre-onset + episode start" clip §6.3 wants, captured before it can roll out of
+        // the 30s ring buffer even if this episode ends up running long.
+        episodeAssembler.process(FrameResult(now, score, rmsDb, dominantBandHz, rejectedClasses)) {
+            ringBuffer.snapshotLast(CLIP_CAPTURE_SAMPLES)
+        }.forEach(onEpisode)
     }
 
     private fun runGate2(window: ShortArray): Gate2Result? = try {
@@ -141,6 +148,7 @@ class FrameWindower(
         val SMALL_FRAME_SAMPLES = AudioConfig.SAMPLE_RATE_HZ / 5 // ~200ms, for Gate 1's RMS
         const val CLASSIFIER_WINDOW_SAMPLES = 15_600 // 0.96s @ 16kHz -- YAMNet's fixed input (§4.7)
         const val GATE3_FRAME_SAMPLES = 1_024 // power-of-two, for BandEnergyAnalyzer's FFT
+        val CLIP_CAPTURE_SAMPLES = ClipStore.DEFAULT_MAX_CLIP_SAMPLES // same 12s cap ClipStore itself enforces (§6.3)
         const val ENVELOPE_CAPACITY = 30 // 6s of history at 200ms cadence, matching the periodicity search window
     }
 }

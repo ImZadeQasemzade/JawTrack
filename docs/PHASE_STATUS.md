@@ -137,11 +137,75 @@ in this repo and can't be fetched in this sandbox.
 - [ ] Confirm a Speech-flagged window really never reaches disk (§6.4) — this needs a real
       device test, not just the `MUST_DESTROY` unit-level logic check.
 
-## Phase 4+ — not started
+## Phase 4 — ClipStore + Keystore encryption + retention + speech destruction
 
-ClipStore + Keystore encryption, Health Connect sync, report UI, labeling loop, correlation
-engine, PDF export, trained classifier swap — all pending the Phase 3 checklist above on real
-hardware with real audio.
+Built ahead of Phase 3's own real-hardware checklist, same as Phase 3 was ahead of Phase 1/2's.
+
+**Fully unit-tested (pure Kotlin):**
+
+- `core-logic/.../clips/ClipCapping` — the §6.3 12-second clip cap, pulled out of `ClipStore`
+  specifically so it's testable outside Android: truncates to the *most recent* N samples
+  (verified it's the tail, not the head, that survives), passes shorter audio through
+  unchanged. `ClipStore` calls this rather than re-implementing truncation itself.
+- `core-logic/.../retention/RetentionPolicy` — `computeExpiresAt` (clamped to the 3–90 day
+  range §6.7 specifies, default 14) and `isExpired`'s exact boundary (`now >= expiresAt`,
+  tested at expiry-minus-one/exactly-at/expiry-plus-one).
+- Gate 2's `MUST_DESTROY` verdict for Speech (§6.4) was already tested in Phase 3 — Phase 4
+  is what actually acts on it: `FrameWindower` returns immediately on that verdict, before
+  `EpisodeAssembler.process()` is ever called, so no clip-capture payload is ever captured for
+  that window, let alone written. That control-flow guarantee itself is Android code and can't
+  be unit-tested here (see below), but the decision it depends on is.
+
+**Written but unverified (needs Android Keystore + a real device — this sandbox has neither):**
+
+- `clips/ClipStore` — AES-256-GCM via a hand-rolled `javax.crypto`/`java.security.KeyStore`
+  wrapper (not `androidx.security:security-crypto`, which §6.5 says is in maintenance mode; not
+  Tink, to avoid another dependency this sandbox can't verify resolves). One app-wide Keystore
+  key, StrongBox-backed where available with a fallback if not, a fresh random IV per clip
+  (stored length-prefixed alongside the ciphertext). Unlike `YamnetGate2Classifier`, everything
+  here is standard JDK/Android framework API rather than a third-party library, so the risk
+  profile is lower — but Android Keystore genuinely cannot be exercised outside a device/
+  emulator, so none of it has actually run.
+- Clip capture required extending `EpisodeAssembler` itself: `process()` now takes an optional
+  `capturePayload` lambda, invoked exactly once, synchronously, at a run's true onset — the
+  ring-buffer snapshot has to happen *then* (up to 12s trailing, matching "10s pre-onset +
+  episode start") because by the time a long episode finishes, that audio may have already
+  rolled out of the 30s ring buffer. The payload rides through merges via the same
+  earliest-wins logic the episode stats already use, rather than a second parallel state
+  machine in `FrameWindower` that could drift out of sync — this was a deliberate design
+  choice, not the obvious first draft. 3 new tests cover it (capture-once, merge keeps the
+  earlier payload, no-lambda-supplied stays null); all 15 pre-existing `EpisodeAssembler` tests
+  still pass unchanged since the parameter is optional.
+- `clips/RetentionWorker` (WorkManager `CoroutineWorker`) — daily periodic + one-shot on every
+  launch, per §6.7. Untested: needs `WorkManager.getInstance()`, which needs a real Context.
+- "Delete all audio" button on `StartNightScreen`, with a confirmation dialog (destructive, no
+  undo) — `ClipRepository.deleteAllClips()` wipes every clip file and DB row immediately.
+
+**Not done, and can't be done without real audio:** actually confirming a clip decrypts back to
+the original audio, that StrongBox key generation and its non-StrongBox fallback both work on
+real hardware, and that the 14-day default retention actually purges a real clip file from disk
+via WorkManager. All of this is standard, well-understood Android API usage — the code risk
+here is much lower than Phase 3's MediaPipe integration — but "should work" isn't "verified."
+
+### Before calling Phase 4 done, on the real device
+
+- [ ] Write a clip, kill and restart the app, read it back, confirm the decrypted audio matches.
+- [ ] Confirm `KeyGenParameterSpec.Builder.setIsStrongBoxBacked(true)` actually succeeds on a
+      StrongBox-capable device, and that the non-StrongBox fallback path works on one without.
+- [ ] Set a clip's `expiresAt` to the past directly in the DB (or wait out a short retention
+      window), trigger `RetentionWorker`, and confirm both the file and the DB row are gone.
+- [ ] Confirm the daily periodic work actually survives Doze/reboot per WorkManager's normal
+      guarantees — nothing JawTrack-specific here, but worth a real check.
+- [ ] Tap "Delete all audio" mid-development with a few real clips saved and confirm every file
+      under `filesDir/clips/` is actually gone, not just the DB rows.
+- [ ] Re-run §9's Phase 3 checklist alongside this one — Phase 4 only writes a clip when Phase
+      3's detection pipeline actually produces a valid episode, so they're only truly testable
+      together on a real night.
+
+## Phase 5+ — not started
+
+Health Connect sync, report UI, labeling loop, correlation engine, PDF export, trained
+classifier swap — all pending the Phase 3/4 checklists above on real hardware with real audio.
 
 The full Room schema for these phases (§7) is already in place (`app/.../data/db/entities`)
 so adding them later won't require a destructive migration, but their DAOs are unused CRUD

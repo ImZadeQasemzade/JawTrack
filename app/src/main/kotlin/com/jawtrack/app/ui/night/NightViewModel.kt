@@ -140,4 +140,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     fun stopNight() {
         RecordingService.stop(getApplication())
     }
+
+    /** "Delete all audio" (§6.7): every clip file and row, immediately, no undo. */
+    fun deleteAllAudio() {
+        viewModelScope.launch {
+            app.clipRepository.deleteAllClips()
+        }
+    }
 }

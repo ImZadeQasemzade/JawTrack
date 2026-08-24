@@ -70,6 +70,7 @@ dependencies {
     ksp("androidx.room:room-compiler:2.6.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     // Gate 2 (§4.7, D5). Version unverified — this sandbox has no network access to Google's
     // Maven repo to confirm the current release; check for a newer stable before building.

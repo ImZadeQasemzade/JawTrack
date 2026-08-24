@@ -18,7 +18,15 @@ data class EpisodeCandidate(
     val meanScore: Double,
     val peakDb: Double,
     val dominantBandHz: Double?,
-    val rejectedClasses: List<String>
+    val rejectedClasses: List<String>,
+    /**
+     * Whatever [EpisodeAssembler.process]'s `capturePayload` returned at this episode's true
+     * onset — e.g. a pre-onset ring-buffer snapshot for clip extraction (§4.4, §6.3). Untyped
+     * so the assembler itself stays audio-agnostic; the one caller that cares casts it back.
+     * Null if no `capturePayload` was supplied, or the episode never actually opened a run
+     * (shouldn't happen — every emitted candidate came from a run that did).
+     */
+    val payload: Any? = null
 )
 
 /**
@@ -42,7 +50,12 @@ class EpisodeAssembler(
     private var active: RunBuilder? = null
     private var pending: RawEpisode? = null
 
-    fun process(frame: FrameResult): List<EpisodeCandidate> {
+    /**
+     * @param capturePayload invoked exactly once, synchronously, iff this frame opens a *new*
+     *   run (idle -> active) — i.e. at the episode's true onset instant. Absent for every other
+     *   frame, including ones that merely keep an existing run open.
+     */
+    fun process(frame: FrameResult, capturePayload: (() -> Any?)? = null): List<EpisodeCandidate> {
         val output = mutableListOf<EpisodeCandidate>()
 
         // A pending episode that nothing merged into within the gap window is done waiting.
@@ -55,7 +68,7 @@ class EpisodeAssembler(
         val currentActive = active
         when {
             currentActive == null && frame.score > enterThreshold -> {
-                active = RunBuilder(frame.timestampMillis).apply { absorb(frame) }
+                active = RunBuilder(frame.timestampMillis, capturePayload?.invoke()).apply { absorb(frame) }
             }
             currentActive != null && frame.score >= exitThreshold -> {
                 currentActive.absorb(frame)
@@ -96,7 +109,7 @@ class EpisodeAssembler(
         return output
     }
 
-    private class RunBuilder(private val onsetMillis: Long) {
+    private class RunBuilder(private val onsetMillis: Long, private val payload: Any?) {
         private var offsetMillis = onsetMillis
         private var peakScore = Double.NEGATIVE_INFINITY
         private var sumScore = 0.0
@@ -123,7 +136,8 @@ class EpisodeAssembler(
             frameCount = frameCount,
             peakDb = peakDb,
             dominantBandCounts = dominantBandCounts.toMap(),
-            rejectedClasses = rejectedClasses.toSet()
+            rejectedClasses = rejectedClasses.toSet(),
+            payload = payload
         )
     }
 
@@ -135,11 +149,13 @@ class EpisodeAssembler(
         val frameCount: Int,
         val peakDb: Double,
         val dominantBandCounts: Map<Double, Int>,
-        val rejectedClasses: Set<String>
+        val rejectedClasses: Set<String>,
+        val payload: Any?
     ) {
         private val meanScore: Double get() = if (frameCount > 0) sumScore / frameCount else 0.0
         private val dominantBandHz: Double? get() = dominantBandCounts.maxByOrNull { it.value }?.key
 
+        /** [this] is always the earlier-onset side, so its payload (the true onset capture) wins. */
         fun mergedWith(other: RawEpisode): RawEpisode = RawEpisode(
             onsetMillis = minOf(onsetMillis, other.onsetMillis),
             offsetMillis = maxOf(offsetMillis, other.offsetMillis),
@@ -150,7 +166,8 @@ class EpisodeAssembler(
             dominantBandCounts = (dominantBandCounts.keys + other.dominantBandCounts.keys).associateWith { hz ->
                 (dominantBandCounts[hz] ?: 0) + (other.dominantBandCounts[hz] ?: 0)
             },
-            rejectedClasses = rejectedClasses + other.rejectedClasses
+            rejectedClasses = rejectedClasses + other.rejectedClasses,
+            payload = payload
         )
 
         fun toCandidateOrNull(minDurationMillis: Long, maxDurationMillis: Long): EpisodeCandidate? {
@@ -163,7 +180,8 @@ class EpisodeAssembler(
                 meanScore = meanScore,
                 peakDb = peakDb,
                 dominantBandHz = dominantBandHz,
-                rejectedClasses = rejectedClasses.toList()
+                rejectedClasses = rejectedClasses.toList(),
+                payload = payload
             )
         }
     }

@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
@@ -169,7 +168,16 @@ class RecordingService : Service(), AudioCapture.Listener {
         val currentSessionId = sessionId
         if (currentSessionId >= 0) {
             serviceScope.launch {
-                app.sessionRepository.saveEpisode(currentSessionId, candidate, CLASSIFIER_VERSION)
+                val episodeId = app.sessionRepository.saveEpisode(currentSessionId, candidate, CLASSIFIER_VERSION)
+                val clipAudio = candidate.payload as? ShortArray
+                if (clipAudio != null) {
+                    app.clipRepository.saveClip(
+                        episodeId = episodeId,
+                        pcm16Bit = clipAudio,
+                        sampleRateHz = AudioConfig.SAMPLE_RATE_HZ,
+                        createdAtMillis = candidate.onsetMillis
+                    )
+                }
             }
         }
     }

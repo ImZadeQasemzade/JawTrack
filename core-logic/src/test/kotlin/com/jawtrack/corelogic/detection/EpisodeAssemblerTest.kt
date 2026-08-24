@@ -182,4 +182,49 @@ class EpisodeAssemblerTest {
         assertEquals(1, episodes.size)
         assertEquals(1_000L, episodes.single().offsetMillis)
     }
+
+    @Test
+    fun `capturePayload is invoked exactly once, at the true onset frame`() {
+        val assembler = EpisodeAssembler()
+        var captureCount = 0
+        val capture = { captureCount++; "clip-$captureCount" }
+
+        assembler.process(frame(0, 0.8), capture)     // onset -- captures
+        assembler.process(frame(400, 0.9), capture)   // still active -- must not capture again
+        assembler.process(frame(800, 0.5), capture)   // dips but stays open (hysteresis) -- must not capture
+
+        val episodes = assembler.flush()
+
+        assertEquals(1, captureCount)
+        assertEquals("clip-1", episodes.single().payload)
+    }
+
+    @Test
+    fun `merging two runs keeps the earlier run's payload, not the later one's`() {
+        val assembler = EpisodeAssembler(mergeGapMillis = 3_000)
+
+        assembler.process(frame(0, 0.8)) { "first-onset-clip" }
+        assembler.process(frame(400, 0.8))
+        assembler.process(frame(800, 0.2)) // first run ends
+
+        assembler.process(frame(2_000, 0.8)) { "second-onset-clip" } // within merge gap
+        assembler.process(frame(2_400, 0.8))
+        assembler.process(frame(2_800, 0.2)) // second run ends -- merges into pending
+
+        val episodes = assembler.flush()
+
+        assertEquals(1, episodes.size)
+        assertEquals("first-onset-clip", episodes.single().payload)
+    }
+
+    @Test
+    fun `an episode assembled with no capturePayload has a null payload`() {
+        val assembler = EpisodeAssembler()
+        assembler.process(frame(0, 0.8))
+        assembler.process(frame(400, 0.8))
+
+        val episodes = assembler.flush()
+
+        assertNull(episodes.single().payload)
+    }
 }

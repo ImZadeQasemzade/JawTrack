@@ -53,7 +53,8 @@ class MainActivity : ComponentActivity() {
                             onStartNight = { calibrationOnly -> viewModel.startNight(calibrationOnly) },
                             onStopNight = { viewModel.stopNight() },
                             onDismissSilentDeathBanner = { viewModel.dismissSilentDeathBanner() },
-                            onOpenOnboarding = { showOnboarding = true }
+                            onOpenOnboarding = { showOnboarding = true },
+                            onDeleteAllAudio = { viewModel.deleteAllAudio() }
                         )
                     }
                 }

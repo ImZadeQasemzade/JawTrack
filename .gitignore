@@ -12,3 +12,4 @@
 /app/build/
 /core-logic/build/
 /app/release/
+.kotlin/
