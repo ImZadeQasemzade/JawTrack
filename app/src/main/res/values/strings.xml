@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">JawTrack</string>
+    <string name="notification_channel_recording">Overnight recording</string>
+    <string name="notification_channel_recording_desc">Shows while JawTrack is listening overnight</string>
+    <string name="notification_title_recording">JawTrack is listening</string>
+    <string name="notification_text_recording_template">Elapsed %1$s · %2$d episode(s) so far</string>
+    <string name="notification_stop_action">Stop</string>
+</resources>

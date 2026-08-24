@@ -1,0 +1,147 @@
+package com.jawtrack.app.ui.night
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+
+@Composable
+fun StartNightScreen(
+    state: NightUiState,
+    onStartNight: () -> Unit,
+    onStopNight: () -> Unit,
+    onDismissSilentDeathBanner: () -> Unit,
+    onOpenOnboarding: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Text("JawTrack", style = MaterialTheme.typography.headlineMedium)
+
+        if (state.silentDeathAtMillis != null) {
+            SilentDeathBanner(
+                atMillis = state.silentDeathAtMillis,
+                onDismiss = onDismissSilentDeathBanner,
+                onOpenSettings = onOpenOnboarding
+            )
+        }
+
+        if (state.isRecording) {
+            RecordingCard(elapsedMillis = state.elapsedMillis, onStopNight = onStopNight)
+        } else {
+            ReadyCard(state = state, onStartNight = onStartNight, onOpenOnboarding = onOpenOnboarding)
+        }
+
+        Text(
+            "Wellness self-tracking, not a medical device. No diagnosis or treatment claims.",
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
+}
+
+@Composable
+private fun SilentDeathBanner(atMillis: Long, onDismiss: () -> Unit, onOpenSettings: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "Last night's recording stopped early, at ${formatClockTime(atMillis)}.",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                "This is usually battery optimization killing the app overnight. " +
+                    "Check the background-activity settings for your phone.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Column(horizontalAlignment = Alignment.End, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = onOpenSettings) { Text("Fix settings") }
+                TextButton(onClick = onDismiss) { Text("Dismiss") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecordingCard(elapsedMillis: Long, onStopNight: () -> Unit) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Listening", style = MaterialTheme.typography.titleLarge)
+            Text(formatElapsed(elapsedMillis), style = MaterialTheme.typography.displaySmall)
+            Button(onClick = onStopNight) { Text("Stop night") }
+        }
+    }
+}
+
+@Composable
+private fun ReadyCard(state: NightUiState, onStartNight: () -> Unit, onOpenOnboarding: () -> Unit) {
+    Card {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Ready for tonight", style = MaterialTheme.typography.titleLarge)
+
+            ChecklistLine("Microphone permission", state.micPermissionGranted)
+            ChecklistLine("Notification permission", state.notificationPermissionGranted)
+            ChecklistLine("Battery optimization disabled", state.batteryOptimizationIgnored)
+            ChecklistLine("Phone is charging", state.isCharging)
+
+            if (!state.micPermissionGranted || !state.batteryOptimizationIgnored) {
+                TextButton(onClick = onOpenOnboarding) { Text("Fix setup") }
+            }
+
+            Button(
+                onClick = onStartNight,
+                enabled = state.micPermissionGranted && state.isCharging
+            ) {
+                Text("Start night")
+            }
+
+            if (!state.isCharging) {
+                Text(
+                    "Plug in your phone before starting — JawTrack requires charging overnight (§4.6.3).",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChecklistLine(label: String, done: Boolean) {
+    Text((if (done) "✓ " else "○ ") + label, style = MaterialTheme.typography.bodyMedium)
+}
+
+private fun formatElapsed(elapsedMillis: Long): String {
+    val hours = TimeUnit.MILLISECONDS.toHours(elapsedMillis)
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(elapsedMillis) % 60
+    return "%dh %02dm".format(hours, minutes)
+}
+
+private fun formatClockTime(millis: Long): String =
+    SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date(millis))
