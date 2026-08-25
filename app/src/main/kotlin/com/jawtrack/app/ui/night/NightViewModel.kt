@@ -1,6 +1,10 @@
 package com.jawtrack.app.ui.night
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Build
@@ -46,8 +50,30 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
 
     private var activeSession: Session? = null
 
+    /**
+     * `refreshEnvironmentStatus()` was previously only called from `init` and
+     * `MainActivity.onResume()` — plugging in the cable while the app stayed foregrounded (no
+     * resume transition) left `isCharging` stuck at whatever it read on launch, permanently
+     * blocking "Start night". Power-connect/disconnect broadcasts fire regardless of activity
+     * lifecycle, so this catches that case live.
+     */
+    private val powerStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            refreshEnvironmentStatus()
+        }
+    }
+
     init {
         refreshEnvironmentStatus()
+        ContextCompat.registerReceiver(
+            getApplication(),
+            powerStateReceiver,
+            IntentFilter().apply {
+                addAction(Intent.ACTION_POWER_CONNECTED)
+                addAction(Intent.ACTION_POWER_DISCONNECTED)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         viewModelScope.launch { reconcileMostRecentSession() }
         viewModelScope.launch { refreshRoomProfileStatus() }
         viewModelScope.launch { refreshHealthConnectStatusSuspend() }
@@ -64,6 +90,11 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
                 wasRecording = running
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        getApplication<Application>().unregisterReceiver(powerStateReceiver)
     }
 
     private suspend fun refreshRoomProfileStatus() {

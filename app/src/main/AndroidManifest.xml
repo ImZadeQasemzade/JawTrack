@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!-- Read-only Health Connect scopes (§5.1) -- Garmin Connect writes these, JawTrack only reads. -->
+    <!-- Read-only Health Connect scopes (§5.1); Garmin Connect writes these, JawTrack only reads. -->
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
@@ -51,7 +51,7 @@
             android:foregroundServiceType="microphone"
             android:exported="false" />
 
-        <!-- Health Connect privacy rationale (§5.1) -- unverified manifest wiring, see the
+        <!-- Health Connect privacy rationale (§5.1); unverified manifest wiring, see the
              large comment atop HealthConnectRationaleActivity.kt. -->
         <activity
             android:name=".health.HealthConnectRationaleActivity"
