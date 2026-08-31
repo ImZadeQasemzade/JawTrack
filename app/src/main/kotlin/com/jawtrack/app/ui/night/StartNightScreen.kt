@@ -139,7 +139,12 @@ private fun RecordingCard(elapsedMillis: Long, isCalibratingNow: Boolean, onStop
 
 @Composable
 private fun ReadyCard(state: NightUiState, onStartNight: (Boolean) -> Unit, onOpenOnboarding: () -> Unit) {
-    val canStart = state.micPermissionGranted && state.isCharging
+    // Charging is a strong recommendation (§4.6.3), not a hard gate: some OEMs (e.g. Motorola's
+    // Adaptive Charging) pause active charging while plugged in to protect battery health, which
+    // makes BatteryManager.isCharging() report false even though the phone is genuinely on the
+    // charger — blocking "Start night" on that signal was locking people out overnight for a
+    // false negative.
+    val canStart = state.micPermissionGranted
 
     Card {
         Column(
@@ -153,7 +158,7 @@ private fun ReadyCard(state: NightUiState, onStartNight: (Boolean) -> Unit, onOp
             ChecklistLine("Microphone permission", state.micPermissionGranted)
             ChecklistLine("Notification permission", state.notificationPermissionGranted)
             ChecklistLine("Battery optimization disabled", state.batteryOptimizationIgnored)
-            ChecklistLine("Phone is charging", state.isCharging)
+            ChecklistLine("Phone is charging (recommended)", state.isCharging)
 
             if (!state.micPermissionGranted || !state.batteryOptimizationIgnored) {
                 TextButton(onClick = onOpenOnboarding) { Text("Fix setup") }
@@ -180,7 +185,10 @@ private fun ReadyCard(state: NightUiState, onStartNight: (Boolean) -> Unit, onOp
 
             if (!state.isCharging) {
                 Text(
-                    "Plug in your phone before starting — JawTrack requires charging overnight (§4.6.3).",
+                    "Recommended: plug in your phone before starting — an 8h recording drains " +
+                        "the battery fast (§4.6.3). If it's already on the charger and this still " +
+                        "shows unticked, some phones (e.g. Motorola's Adaptive Charging) pause " +
+                        "active charging to protect the battery — that's fine, go ahead and start.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
