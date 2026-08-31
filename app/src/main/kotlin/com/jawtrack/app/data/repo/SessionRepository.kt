@@ -20,6 +20,9 @@ class SessionRepository(private val db: JawTrackDatabase) {
 
     suspend fun getSession(id: Long): Session? = db.sessionDao().getById(id)
 
+    /** Every session left RECORDING/CALIBRATION (§4.6.2 silent-death reconciliation) — see [SessionDao.getUnterminated]. */
+    suspend fun getUnterminatedSessions(): List<Session> = db.sessionDao().getUnterminated()
+
     suspend fun startSession(startedAt: Long, audioSourceUsed: String, calibrationOnly: Boolean): Long {
         val session = Session(
             startedAt = startedAt,
@@ -33,6 +36,11 @@ class SessionRepository(private val db: JawTrackDatabase) {
 
     suspend fun recordHeartbeat(sessionId: Long, timestamp: Long) {
         db.sessionDao().updateHeartbeat(sessionId, timestamp)
+    }
+
+    /** Corrects the placeholder source [startSession] was created with once AudioCapture confirms which one actually initialized (§4.1). */
+    suspend fun updateAudioSource(sessionId: Long, audioSourceUsed: String) {
+        db.sessionDao().updateAudioSource(sessionId, audioSourceUsed)
     }
 
     suspend fun recordGap(sessionId: Long, startAt: Long, endAt: Long, reason: String) {

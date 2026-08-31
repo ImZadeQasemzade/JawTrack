@@ -26,8 +26,20 @@ interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY startedAt DESC LIMIT 1")
     fun observeMostRecent(): Flow<Session?>
 
+    /**
+     * Every session never marked ended (RECORDING or CALIBRATION, per [markEnded] being the
+     * only writer of `endedAt`) — not just the most recent one. A silently-killed session that
+     * gets followed by a later session (even a short test/retry) is no longer "most recent",
+     * but it's just as unterminated and just as much a silent-death candidate.
+     */
+    @Query("SELECT * FROM sessions WHERE endedAt IS NULL")
+    suspend fun getUnterminated(): List<Session>
+
     @Query("UPDATE sessions SET lastHeartbeatAt = :timestamp WHERE id = :sessionId")
     suspend fun updateHeartbeat(sessionId: Long, timestamp: Long)
+
+    @Query("UPDATE sessions SET audioSourceUsed = :audioSourceUsed WHERE id = :sessionId")
+    suspend fun updateAudioSource(sessionId: Long, audioSourceUsed: String)
 
     @Query("UPDATE sessions SET roomProfileId = :roomProfileId WHERE id = :sessionId")
     suspend fun updateRoomProfile(sessionId: Long, roomProfileId: Long)

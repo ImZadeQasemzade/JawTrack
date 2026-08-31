@@ -13,7 +13,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jawtrack.app.JawTrackApp
 import com.jawtrack.app.data.db.entities.Session
-import com.jawtrack.app.data.db.entities.SessionState
 import com.jawtrack.app.health.HealthConnectAvailability
 import com.jawtrack.app.health.HealthConnectRepo
 import com.jawtrack.app.recording.OemBatteryAdvisor
@@ -141,32 +140,44 @@ class NightViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * On launch, find any session left in RECORDING state whose service process is not
-     * currently alive — that's a session that never reached a clean or error stop, i.e. an
-     * OEM battery kill (§4.6.2). Closes it out as an error stop and surfaces the banner.
+     * On launch, find every session left unterminated (RECORDING or CALIBRATION, never reached
+     * a clean or error stop) whose service process is not currently alive — that's the
+     * signature of an OEM battery kill (§4.6.2). Closes each one out as an error stop and
+     * surfaces the banner.
+     *
+     * Deliberately checks *every* unterminated session, not just the most recent one: a
+     * silently-killed session followed by even a short later session (a retry, a debug/test
+     * tap) is no longer "most recent" by that narrower check, which let it sit unreconciled
+     * forever — the later session masked it, and the banner never fired.
      */
     private suspend fun reconcileMostRecentSession() {
-        val recent = app.sessionRepository.getMostRecentSession() ?: return
-        activeSession = recent
-
-        if (recent.state != SessionState.RECORDING) return
-        if (RecordingService.isRunning.value) return // genuinely still running
+        activeSession = app.sessionRepository.getMostRecentSession()
 
         val now = System.currentTimeMillis()
-        val evaluation = HeartbeatEvaluator.evaluate(
-            cleanShutdown = recent.cleanShutdown,
-            lastHeartbeatAtMillis = recent.lastHeartbeatAt,
-            referenceNowMillis = now
-        )
+        var latestSilentDeathAt: Long? = null
 
-        if (evaluation.likelySilentDeath) {
+        for (session in app.sessionRepository.getUnterminatedSessions()) {
+            val evaluation = HeartbeatEvaluator.evaluate(
+                cleanShutdown = session.cleanShutdown,
+                lastHeartbeatAtMillis = session.lastHeartbeatAt,
+                referenceNowMillis = now
+            )
+            if (!evaluation.likelySilentDeath) continue // e.g. the genuinely still-running session, if any
+
             app.sessionRepository.endSession(
-                sessionId = recent.id,
-                startedAt = recent.startedAt,
-                endedAt = evaluation.apparentStopAtMillis ?: recent.lastHeartbeatAt ?: recent.startedAt,
+                sessionId = session.id,
+                startedAt = session.startedAt,
+                endedAt = evaluation.apparentStopAtMillis ?: session.lastHeartbeatAt ?: session.startedAt,
                 cleanShutdown = false
             )
-            _uiState.value = _uiState.value.copy(silentDeathAtMillis = evaluation.apparentStopAtMillis)
+            val stopAt = evaluation.apparentStopAtMillis
+            if (stopAt != null && (latestSilentDeathAt == null || stopAt > latestSilentDeathAt!!)) {
+                latestSilentDeathAt = stopAt
+            }
+        }
+
+        if (latestSilentDeathAt != null) {
+            _uiState.value = _uiState.value.copy(silentDeathAtMillis = latestSilentDeathAt)
         }
     }
 

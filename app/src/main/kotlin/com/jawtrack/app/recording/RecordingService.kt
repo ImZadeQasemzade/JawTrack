@@ -320,6 +320,13 @@ class RecordingService : Service(), AudioCapture.Listener {
 
     override fun onCaptureStarted(audioSourceUsed: String) {
         Log.i(TAG, "Recording started with source=$audioSourceUsed")
+        // startSession() was called with a SOURCE_MIC placeholder before AudioCapture had
+        // actually negotiated a source (UNPROCESSED first, MIC fallback) -- correct it now that
+        // the real one is known, so the DB reflects what was actually used (§4.1).
+        val currentSessionId = sessionId
+        if (currentSessionId >= 0) {
+            serviceScope.launch { app.sessionRepository.updateAudioSource(currentSessionId, audioSourceUsed) }
+        }
     }
 
     override fun onGapStarted(atMillis: Long, reason: String) {
