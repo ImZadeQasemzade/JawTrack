@@ -32,8 +32,9 @@ import kotlinx.coroutines.launch
 /**
  * Foreground recording service (JawTrackSpec §3, §4). Must be started from a visible
  * Activity — on API 34+ a microphone-type foreground service cannot be started from the
- * background, so this service assumes permissions are already granted and the phone is
- * already charging by the time it's asked to start; the UI layer is responsible for that.
+ * background, so this service assumes permissions are already granted by the time it's asked
+ * to start; the UI layer is responsible for that. Charging is recommended but not required —
+ * see the comment in [beginSession].
  */
 class RecordingService : Service(), AudioCapture.Listener {
 
@@ -56,12 +57,19 @@ class RecordingService : Service(), AudioCapture.Listener {
 
     private val app: JawTrackApp get() = application as JawTrackApp
 
+    /**
+     * Deliberately keys off [Intent.ACTION_POWER_DISCONNECTED] alone, not
+     * [Intent.ACTION_BATTERY_CHANGED] + [isCharging]: `ACTION_BATTERY_CHANGED` is a sticky
+     * broadcast, so registering for it redelivers the *current* battery state immediately —
+     * combined with `isCharging()` misreporting false on OEMs that pause active charging
+     * (Motorola Adaptive Charging observed on real hardware), that redelivery was stopping a
+     * freshly started session within milliseconds whenever the phone happened to already be at
+     * a low level. `ACTION_POWER_DISCONNECTED` is a genuine one-shot unplug event, not a stale
+     * state snapshot, so it doesn't have either problem.
+     */
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
-                Intent.ACTION_POWER_DISCONNECTED -> checkBatteryAfterUnplug()
-                Intent.ACTION_BATTERY_CHANGED -> if (!isCharging()) checkBatteryAfterUnplug()
-            }
+            if (intent.action == Intent.ACTION_POWER_DISCONNECTED) checkBatteryAfterUnplug()
         }
     }
 
@@ -73,7 +81,11 @@ class RecordingService : Service(), AudioCapture.Listener {
         notificationManager.ensureChannel()
         ringBuffer = AudioRingBuffer(AudioConfig.RING_BUFFER_CAPACITY_SAMPLES)
         audioCapture = AudioCapture(this, ringBuffer, this)
-        _isRunning.value = true
+        // _isRunning flips true once beginSession() has actually persisted the new Session row
+        // (see there) -- not here. NightViewModel starts its elapsed-time ticker the moment it
+        // observes isRunning=true and immediately queries "most recent session"; setting this
+        // true this early raced that query against the async DB insert below and could hand the
+        // ticker the *previous* (already-ended) session's startedAt instead.
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -105,17 +117,18 @@ class RecordingService : Service(), AudioCapture.Listener {
     }
 
     private fun beginSession() {
+        // Charging is a strong recommendation (§4.6.3), not a hard requirement: real-device
+        // testing showed BatteryManager.isCharging() can report false while genuinely plugged
+        // in (Motorola's Adaptive Charging pauses active charging to protect battery health),
+        // so refusing to start on that signal was silently killing legitimate nights.
+        // [batteryReceiver] still stops the session on a genuine unplug at low battery, which
+        // is the actual risk this was guarding against.
         if (!isCharging()) {
-            Log.w(TAG, "Refusing to start: device is not charging (§4.6.3)")
-            releaseAndStop()
-            return
+            Log.w(TAG, "Starting while not detected as charging (§4.6.3) — proceeding anyway")
         }
 
         acquireWakeLock()
-        registerReceiver(batteryReceiver, IntentFilter().apply {
-            addAction(Intent.ACTION_POWER_DISCONNECTED)
-            addAction(Intent.ACTION_BATTERY_CHANGED)
-        })
+        registerReceiver(batteryReceiver, IntentFilter(Intent.ACTION_POWER_DISCONNECTED))
 
         sessionStartedAt = System.currentTimeMillis()
 
@@ -125,6 +138,10 @@ class RecordingService : Service(), AudioCapture.Listener {
                 audioSourceUsed = AudioConfig.SOURCE_MIC, // updated once AudioCapture confirms the real source
                 calibrationOnly = calibrationOnly
             )
+            // Only now: the Session row genuinely exists, so any observer of isRunning that
+            // turns around and queries "most recent session" (NightViewModel's elapsed ticker)
+            // is guaranteed to find it rather than a stale prior session.
+            _isRunning.value = true
             audioCapture.start()
             if (calibrationOnly) {
                 calibrationSampler = CalibrationSampler(ringBuffer).also { it.start(serviceScope) }
